@@ -1,0 +1,106 @@
+version: '3.8'
+
+networks:
+  ha_net:
+    driver: bridge
+
+services:
+  # 1) PostgreSQL master
+  postgres-master:
+    image: postgres:13-alpine
+    container_name: postgres-master
+    env_file:
+      - db/master.env
+    volumes:
+      - ./db/init-master.sh:/docker-entrypoint-initdb.d/init-master.sh:ro
+      - pgmaster-data:/var/lib/postgresql/data
+    networks:
+      - ha_net
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todo_user"]
+      interval: 10s
+      retries: 5
+
+  # 2) PostgreSQL replica
+  postgres-replica:
+    image: postgres:13-alpine
+    container_name: postgres-replica
+    env_file:
+      - db/replica.env
+    volumes:
+      - ./db/init-replica.sh:/docker-entrypoint-initdb.d/init-replica.sh:ro
+      - pgreplica-data:/var/lib/postgresql/data
+    depends_on:
+      - postgres-master
+    networks:
+      - ha_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todo_user"]
+      interval: 10s
+      retries: 5
+
+  # 3) todo-app instance 1
+  app1:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: todo-app-1
+    environment:
+      - DB_HOST=postgres-master
+      - DB_USER=todo_user
+      - DB_PASS=todo_pass
+      - DB_NAME=todo_db
+    networks:
+      - ha_net
+    depends_on:
+      - postgres-master
+      - postgres-replica
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      retries: 5
+
+  # 4) todo-app instance 2
+  app2:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: todo-app-2
+    environment:
+      - DB_HOST=postgres-master
+      - DB_USER=todo_user
+      - DB_PASS=todo_pass
+      - DB_NAME=todo_db
+    networks:
+      - ha_net
+    depends_on:
+      - postgres-master
+      - postgres-replica
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      retries: 5
+
+  # 5) Load Balancer (Nginx)
+  load_balancer:
+    build:
+      context: ./lb
+      dockerfile: Dockerfile
+    container_name: todo-lb
+    ports:
+      - "8081:80"
+    networks:
+      - ha_net
+    depends_on:
+      - app1
+      - app2
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 10s
+      retries: 5
+
+volumes:
+  pgmaster-data:
+  pgreplica-data:

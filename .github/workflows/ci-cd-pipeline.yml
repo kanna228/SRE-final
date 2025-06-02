@@ -25,11 +25,11 @@ jobs:
           node-version: '16'
 
       - name: Install dependencies
-        working-directory: ./app
+        working-directory: ./task2_infra_docker/app
         run: npm ci
 
       - name: Run tests
-        working-directory: ./app
+        working-directory: ./task2_infra_docker/app
         run: npm test
 
       - name: Log in to Docker Hub
@@ -40,10 +40,8 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/todo-app:latest ./app
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/todo-app:latest ./task2_infra_docker/app
 
       - name: Push Docker image
         run: |
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/todo-app:latest
-
-  # Note: No deploy job — local deployment is done manually.
